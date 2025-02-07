@@ -3,6 +3,7 @@ import sys
 import subprocess
 import time
 import itertools
+import re
 from rich.console import Console
 from pyfiglet import Figlet
 from threading import Thread
@@ -39,6 +40,27 @@ def spinner():
     
     sys.stdout.write("\rScanning complete.      \n")  # Clears after finishing
     sys.stdout.flush()
+
+def colorize_output(output):
+    # Regex patterns to match different sections
+    patterns = {
+        "open_ports": r"(\d+/tcp|udp)\s+open",  # Matches open ports
+        "service_info": r"Service Info",  # Matches service info
+        "os_details": r"OS details",  # Matches OS details
+        "vulnerabilities": r"vuln",  # Matches vulnerabilities
+        "active_directory": r"(Active Directory|Domain)",  # Matches AD/Domain info
+    }
+
+    # Apply color based on matched patterns
+    colored_output = output
+    colored_output = re.sub(patterns["open_ports"], lambda x: f"[red]{x.group()}[/red]", colored_output)
+    colored_output = re.sub(patterns["service_info"], lambda x: f"[blue]{x.group()}[/blue]", colored_output)
+    colored_output = re.sub(patterns["os_details"], lambda x: f"[green]{x.group()}[/green]", colored_output)
+    colored_output = re.sub(patterns["vulnerabilities"], lambda x: f"[yellow]{x.group()}[/yellow]", colored_output)
+    colored_output = re.sub(patterns["active_directory"], lambda x: f"[purple]{x.group()}[/purple]", colored_output)
+
+    # Return the colorized output
+    return colored_output
 
 def get_scan_mode():
     console.print("[bold cyan]Select scan mode:[/bold cyan]")
@@ -92,14 +114,15 @@ def run_nmap_scan(target, mode, sudo_password):
     for cmd in scan_cmds[mode]:
         # Run the command with the sudo password injected
         result = subprocess.run(cmd, capture_output=True, text=True, input=sudo_password)
-        process_nmap_output(result.stdout)
+        colorized_output = colorize_output(result.stdout)
+        process_nmap_output(colorized_output)
     
     scanning = False
     spin_thread.join()
 
 def process_nmap_output(output):
     console.print("\n[bold cyan]Full Nmap Output:[/bold cyan]")
-    console.print("[white]" + output + "[/white]")
+    console.print(output)  # The colorized output is displayed
     save_scan_results(target, output)
 
 def get_sudo_password():
