@@ -8,6 +8,7 @@ from rich.console import Console
 from pyfiglet import Figlet
 from threading import Thread
 
+# Function to print the banner
 def print_banner():
     fig = Figlet(font="slant")
     banner = fig.renderText("genMAP")
@@ -25,6 +26,7 @@ def print_banner():
     console.print("")
     console.print("[bold bright_magenta]---------------------------------------------------[/bold bright_magenta]")
 
+# Spinner for showing scan progress
 def spinner():
     sys.stdout.write("\rScanning... ")
     sys.stdout.flush()
@@ -41,6 +43,7 @@ def spinner():
     sys.stdout.write("\rScanning complete.      \n")  # Clears after finishing
     sys.stdout.flush()
 
+# Function to colorize Nmap output based on patterns
 def colorize_output(output):
     # Regex patterns to match different sections
     patterns = {
@@ -62,6 +65,7 @@ def colorize_output(output):
     # Return the colorized output
     return colored_output
 
+# Function to get scan mode from the user
 def get_scan_mode():
     console.print("[bold cyan]Select scan mode:[/bold cyan]")
     console.print("1. [yellow]CTF Mode[/yellow] - Aggressive scanning")
@@ -75,10 +79,12 @@ def get_scan_mode():
         console.print("[red]Invalid choice! Defaulting to CTF mode.[/red]")
         return "ctf"
 
+# Function to get target IP/domain from the user
 def get_target():
     target = input("Enter the target IP or domain to scan: ")
     return target
 
+# Function to save the scan results to a file
 def save_scan_results(target, output):
     scan_count = 1
     while os.path.exists(f"zenmap_{scan_count}.txt"):
@@ -88,14 +94,14 @@ def save_scan_results(target, output):
         f.write(f"\n=== Scan Results for {target} ===\n")
         f.write(output + "\n")
 
+# Function to run the Nmap scan
 def run_nmap_scan(target, mode, sudo_password):
     global scanning
     scanning = True
     
-    # Print the message before the spinner starts
     console.print(f"\n[bold green]Running Nmap scans on {target} in {mode.upper()} mode...[/bold green]")
     
-    time.sleep(1)  # Reduced delay to 1 second before spinner starts
+    time.sleep(1)  # Allow time before spinner starts
     spin_thread = Thread(target=spinner, daemon=True)
     spin_thread.start()
     
@@ -112,31 +118,26 @@ def run_nmap_scan(target, mode, sudo_password):
     }
     
     for cmd in scan_cmds[mode]:
-        # Run the command with the sudo password injected
         result = subprocess.run(cmd, capture_output=True, text=True, input=sudo_password)
-        colorized_output = colorize_output(result.stdout)
-        process_nmap_output(colorized_output)
-    
+        colorized_output = colorize_output(result.stdout)  # Apply the colorization
+        console.print(f"[white]{colorized_output}[/white]")  # Print the colored output
+
     scanning = False
     spin_thread.join()
 
-def process_nmap_output(output):
-    console.print("\n[bold cyan]Full Nmap Output:[/bold cyan]")
-    console.print(output)  # The colorized output is displayed
-    save_scan_results(target, output)
-
+# Function to prompt for sudo password (asked only once)
 def get_sudo_password():
-    # Ask for sudo password once before scanning starts
     console.print("[yellow]Please enter your sudo password to start scanning.[/yellow]")
     sudo_password = input("Password: ")
     return sudo_password
 
+# Main function to execute the script
 def main():
     print_banner()
     global target
     mode = get_scan_mode()
+    sudo_password = get_sudo_password()  # Ask for sudo password once before scanning starts
     target = get_target()
-    sudo_password = get_sudo_password()  # Ask for sudo password at the very start
     run_nmap_scan(target, mode, sudo_password)  # Pass the sudo password for all nmap scans
 
 if __name__ == "__main__":
