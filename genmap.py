@@ -22,7 +22,7 @@ def print_banner():
     banner = fig.renderText("genMAP")
     console.print(f"[bold cyan]{banner}[/bold cyan]")
     console.print("[bold green]GenMAP: Automating Nmap Scans with Ease[/bold green]")
-    console.print(f"[yellow]Created by: K3strelSec | Version: 2.2.13[/yellow]")
+    console.print(f"[yellow]Created by: K3strelSec | Version: 2.3.1 (Secondary Vulnerability Scan Fixed!)[/yellow]")
     console.print("[bold bright_red]---------------------------------------------------[/bold bright_red]")
     console.print("[bold cyan]Key:")
     console.print("[red]Red - Open Ports[/red]")
@@ -51,15 +51,15 @@ def colorize_output(output):
         output = re.sub(pattern, lambda x: f"[{color}]{x.group()}[/{color}]", output)
     return output
 
-# **Save Full Scan Output to a Timestamped Text File**
-def save_results(target, output, scan_type="initial"):
+# **Fixed `save_results()` to Accept 3 Arguments**
+def save_results(target, output, scan_type):
     timestamp = get_timestamp()
     filename = f"genMAP_{scan_type}_scan_{target}_{timestamp}.txt"
     with open(filename, "w") as f:
         f.write(output)
     console.print(f"\n[bold cyan]Scan saved to: {filename}[/bold cyan]")
-
-# **Parse Results**
+    
+    # Define `parse_results()` before using it
 def parse_results(output):
     open_ports = re.findall(r"(\d+)/(tcp|udp)\s+open", output)
     vulnerabilities = list(set(re.findall(r"CVE-\d{4}-\d+", output)))  # Remove duplicates
@@ -69,7 +69,6 @@ def parse_results(output):
     os_details = os_details.group(2) if os_details else os_cpe.group(1) if os_cpe else "Unknown OS"
 
     service_info = list(set(re.findall(r"(Service Info: .+|http-server-header: .+|http-title: .+)", output)))
-
     active_directory = list(set(re.findall(r"(Active Directory|Domain Controller|Kerberos|SMB|LDAP|FQDN)", output)))
 
     general_info = []
@@ -174,48 +173,17 @@ def generate_exploitation_tips(open_ports, vulnerabilities, general_info):
 
     return recommendations
 
-# **Run Secondary Vulnerability Scan**
-def run_vuln_scan(target):
-    console.print("\n[bold yellow]Running Secondary Vulnerability Scan...[/bold yellow]")
-
-    cmd = ["nmap", "-sV", "--script=vuln,vulners,http-enum,smb-enum-shares,rdp-enum-encryption", "-p-", target]
-    console.print(f"\n[bold green]Running Vulnerability Scan: {' '.join(cmd)}[/bold green]")
-
-    process = subprocess.Popen(["sudo", "-S"] + cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    
-    process.stdin.write(sudo_password + "\n")
-    process.stdin.flush()
-
-    output_lines = []
-    for line in iter(process.stdout.readline, ''):
-        output_lines.append(line)
-
-    process.stdout.close()
-    process.wait()
-
-    output = "".join(output_lines)
-
-    console.print("\n[bold white]Raw Data (Vulnerability Scan Output):[/bold white]")
-    console.print(colorize_output(output))
-
-    save_results(target, output, "vuln")
-    
-    open_ports, vulnerabilities, os_details, service_info, active_directory, general_info = parse_results(output)
-    generate_exploitation_tips(open_ports, vulnerabilities, general_info)
-
-# **Run the First Optimized Nmap Scan**
-def run_scan(target):
+# **Run the First TCP Scan**
+def run_tcp_scan(target):
     global sudo_password
     if not sudo_password:
         console.print("\n[bold yellow]Please enter your sudo password for this scan:[/bold yellow]")
         sudo_password = getpass.getpass("Sudo Password: ")
 
-    cmd = ["nmap", "-sS", "-sU", "-sC", "-sV", "-O", "-p-", "-T4", "--top-ports", "200", target]
-
-    console.print(f"\n[bold green]Running Optimized Nmap Scan (TCP + UDP): {' '.join(cmd)}[/bold green]")
+    cmd = ["nmap", "-sS", "-p-", "-T4", "-O", "-sV", "-sC", target]  # TCP SYN scan first
+    console.print(f"\n[bold green]Running TCP Scan: {' '.join(cmd)}[/bold green]")
 
     process = subprocess.Popen(["sudo", "-S"] + cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-
     process.stdin.write(sudo_password + "\n")
     process.stdin.flush()
 
@@ -225,23 +193,81 @@ def run_scan(target):
 
     process.stdout.close()
     process.wait()
-
     output = "".join(output_lines)
 
-    console.print("\n[bold white]Raw Data (First Scan Output):[/bold white]")
+    console.print("\n[bold blue]Raw Data (TCP Scan Output):[/bold blue]")
     console.print(colorize_output(output))
 
-    save_results(target, output, "initial")
+    save_results(target, output, "tcp")
     open_ports, vulnerabilities, os_details, service_info, active_directory, general_info = parse_results(output)
 
-    # **Trigger Secondary Vulnerability Scan**
-    run_vuln_scan(target)
+    # Extract TCP ports found
+    discovered_ports = ",".join([p[0] for p in open_ports])
+    console.print(f"[bold cyan]Detected TCP Ports: {discovered_ports}[/bold cyan]")
 
-# **Main Function**
+    # **Proceed to UDP Scan**
+    run_udp_scan(target, discovered_ports)
+
+# **Run the Second UDP Scan**
+def run_udp_scan(target, discovered_ports):
+    console.print("\n[bold yellow]Running UDP Scan...[/bold yellow]")
+
+    cmd = ["nmap", "-sU", "--top-ports", "200", "-T4", target]  # Scan only top 100 UDP ports
+    console.print(f"\n[bold green]Running UDP Scan: {' '.join(cmd)}[/bold green]")
+
+    process = subprocess.Popen(["sudo", "-S"] + cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    process.stdin.write(sudo_password + "\n")
+    process.stdin.flush()
+
+    output_lines = []
+    for line in iter(process.stdout.readline, ''):
+        output_lines.append(line)
+
+    process.stdout.close()
+    process.wait()
+    output = "".join(output_lines)
+
+    console.print("\n[bold blue]Raw Data (UDP Scan Output):[/bold blue]")
+    console.print(colorize_output(output))
+
+    save_results(target, output, "udp")
+    open_ports, vulnerabilities, os_details, service_info, active_directory, general_info = parse_results(output)
+
+    # **Proceed to Vulnerability Scan**
+    run_vuln_scan(target, discovered_ports)
+
+# **Run the Final Vulnerability Scan**
+def run_vuln_scan(target, discovered_ports):
+    console.print("\n[bold yellow]Running Final Vulnerability Scan...[/bold yellow]")
+
+    cmd = ["nmap", "-sV", "--script=vuln,vulners,http-enum,smb-enum-shares,rdp-enum-encryption", "-p", discovered_ports, target]
+    console.print(f"\n[bold green]Running Vulnerability Scan: {' '.join(cmd)}[/bold green]")
+
+    process = subprocess.Popen(["sudo", "-S"] + cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    process.stdin.write(sudo_password + "\n")
+    process.stdin.flush()
+
+    output_lines = []
+    for line in iter(process.stdout.readline, ''):
+        output_lines.append(line)
+
+    process.stdout.close()
+    process.wait()
+    output = "".join(output_lines)
+
+    console.print("\n[bold blue]Raw Data (Vulnerability Scan Output):[/bold blue]")
+    console.print(colorize_output(output))
+
+    save_results(target, output, "vuln")
+    open_ports, vulnerabilities, os_details, service_info, active_directory, general_info = parse_results(output)
+    generate_exploitation_tips(open_ports, vulnerabilities, general_info)
+
+# **Main Function (Starts TCP First)**
 def main():
     print_banner()
     target = console.input("[bold yellow]Enter Target IP or domain: [/bold yellow]").strip()
-    run_scan(target)
+    run_tcp_scan(target)
 
 if __name__ == "__main__":
     main()
+
