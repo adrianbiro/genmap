@@ -52,9 +52,9 @@ def colorize_output(output):
     return output
 
 # **Save Full Scan Output to a Timestamped Text File**
-def save_results(target, output):
+def save_results(target, output, scan_type="initial"):
     timestamp = get_timestamp()
-    filename = f"genMAP_scan_{target}_{timestamp}.txt"
+    filename = f"genMAP_{scan_type}_scan_{target}_{timestamp}.txt"
     with open(filename, "w") as f:
         f.write(output)
     console.print(f"\n[bold cyan]Scan saved to: {filename}[/bold cyan]")
@@ -88,7 +88,6 @@ def parse_results(output):
             if matches:
                 general_info.append(f"{category}: {', '.join(set(matches))}")
 
-    # **Prints the Parsed Data**
     console.print("\n[bold cyan]Parsed Data:[/bold cyan]")
     console.print(f"[red]Open Ports:[/red] {', '.join([p[0] for p in open_ports]) if open_ports else 'None'}")
     console.print(f"[green]OS Details:[/green] {os_details}")
@@ -99,7 +98,7 @@ def parse_results(output):
 
     return open_ports, vulnerabilities, os_details, service_info, active_directory, general_info
 
-# **Fully Expanded `attack_methods`**
+# **Fully Expanded attack_methods**
 def generate_exploitation_tips(open_ports, vulnerabilities, general_info):
     recommendations = []
 
@@ -115,6 +114,7 @@ def generate_exploitation_tips(open_ports, vulnerabilities, general_info):
         110: "POP3 detected. Try brute-force (`hydra`).",
         111: "RPCBind detected. Try `rpcinfo -p <ip>`, `showmount -e <ip>`.",
         119: "NNTP (Usenet) detected. Try authentication bypass (`telnet <ip> 119`).",
+        123: "NTP detected. Check for amplification attack (`ntpq -c rv <ip>`).",
         135: "MSRPC detected. Use `rpcdump.py` from Impacket.",
         137: "NetBIOS detected. Try `nmblookup -A <ip>` to list NetBIOS names.",
         139: "SMB detected. Check for anonymous login, null sessions (`enum4linux`, `smbclient`).",
@@ -134,37 +134,76 @@ def generate_exploitation_tips(open_ports, vulnerabilities, general_info):
         1723: "PPTP VPN detected. Check for MS-CHAPv2 vulnerabilities.",
         2049: "NFS detected. Try `showmount -e <ip>` to list shares.",
         2181: "Zookeeper detected. Try `echo srvr | nc <ip> 2181`.",
+        2375: "Docker API detected. Check for unauthenticated access (`curl http://<ip>:2375/version`).",
         3306: "MySQL detected. Try `mysql -u root -h <ip>`, check for weak credentials.",
         3389: "RDP detected. Try brute-force (`xfreerdp`), exploit (`BlueKeep`).",
         3632: "DistCC detected. Try remote command execution (`nmap --script distcc-cve2004-2687`).",
+        4444: "Metasploit detected. Possible Meterpreter shell running (`nc -nv <ip> 4444`).",
+        5000: "Docker Registry detected. Check for open access (`curl -X GET http://<ip>:5000/v2/_catalog`).",
         5432: "PostgreSQL detected. Try `psql -h <ip> -U postgres`, check for weak passwords.",
         5900: "VNC detected. Try password cracking (`hydra -P rockyou.txt -t 4 -s 5900 <ip> vnc`).",
+        5985: "WinRM detected. Check for admin access (`evil-winrm -i <ip> -u <user> -p <password>`).",
         6379: "Redis detected. Check for unauthenticated access (`redis-cli -h <ip> ping`).",
         6667: "IRC detected. Check for open proxy (`nmap --script irc-unrealircd-backdoor`).",
         7001: "WebLogic detected. Check for deserialization vulnerabilities.",
         8000: "Common Web App detected. Run `gobuster`, check for admin panels.",
         8080: "Common Proxy/Web App detected. Test for open proxy abuse.",
         8443: "Alternative HTTPS detected. Look for misconfigurations.",
+        8888: "Jupyter Notebook detected. Check for open access (`http://<ip>:8888/tree`).",
         9000: "PHP-FPM detected. Possible remote code execution (`CVE-2019-11043`).",
         9200: "Elasticsearch detected. Check for unauthenticated API access (`curl -X GET <ip>:9200/_cluster/health`).",
         11211: "Memcached detected. Try amplification attacks (`memcrashed`).",
+        27017: "MongoDB detected. Try `mongo --host <ip>` to check for unauthenticated access.",
+        50000: "SAP Management Console detected. Check for vulnerabilities (`nmap --script sap* -p 50000 <ip>`).",
     }
 
+    # Check if open ports have known exploits
     for port, protocol in open_ports:
         port = int(port)
         if port in attack_methods:
             recommendations.append(attack_methods[port])
 
+    # Check for CVE vulnerabilities found in the scan
     for vuln in vulnerabilities:
         recommendations.append(f"Possible exploit available for `{vuln}`. Check ExploitDB: https://www.exploit-db.com/search?cve={vuln}")
 
+    # **Print Exploitation Recommendations**
     console.print("\n[bold cyan]Exploitation Recommendations:[/bold cyan]")
     for rec in recommendations:
         console.print(f"[bold yellow]- {rec}[/bold yellow]")
 
     return recommendations
+
+# **Run Secondary Vulnerability Scan**
+def run_vuln_scan(target):
+    console.print("\n[bold yellow]Running Secondary Vulnerability Scan...[/bold yellow]")
+
+    cmd = ["nmap", "-sV", "--script=vuln,vulners,http-enum,smb-enum-shares,rdp-enum-encryption", "-p-", target]
+    console.print(f"\n[bold green]Running Vulnerability Scan: {' '.join(cmd)}[/bold green]")
+
+    process = subprocess.Popen(["sudo", "-S"] + cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     
-# **Run the Nmap Scan**
+    process.stdin.write(sudo_password + "\n")
+    process.stdin.flush()
+
+    output_lines = []
+    for line in iter(process.stdout.readline, ''):
+        output_lines.append(line)
+
+    process.stdout.close()
+    process.wait()
+
+    output = "".join(output_lines)
+
+    console.print("\n[bold white]Raw Data (Vulnerability Scan Output):[/bold white]")
+    console.print(colorize_output(output))
+
+    save_results(target, output, "vuln")
+    
+    open_ports, vulnerabilities, os_details, service_info, active_directory, general_info = parse_results(output)
+    generate_exploitation_tips(open_ports, vulnerabilities, general_info)
+
+# **Run the First Optimized Nmap Scan**
 def run_scan(target):
     global sudo_password
     if not sudo_password:
@@ -183,18 +222,20 @@ def run_scan(target):
     output_lines = []
     for line in iter(process.stdout.readline, ''):
         output_lines.append(line)
-    
+
     process.stdout.close()
     process.wait()
 
     output = "".join(output_lines)
-    
-    console.print("\n[bold white]Raw Data (Full Output):[/bold white]")
+
+    console.print("\n[bold white]Raw Data (First Scan Output):[/bold white]")
     console.print(colorize_output(output))
 
-    save_results(target, output)
+    save_results(target, output, "initial")
     open_ports, vulnerabilities, os_details, service_info, active_directory, general_info = parse_results(output)
-    generate_exploitation_tips(open_ports, vulnerabilities, general_info)
+
+    # **Trigger Secondary Vulnerability Scan**
+    run_vuln_scan(target)
 
 # **Main Function**
 def main():
