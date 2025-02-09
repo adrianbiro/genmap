@@ -12,11 +12,11 @@ from pyfiglet import Figlet
 console = Console()
 sudo_password = None
 
-# **Timestamped File Naming**
+# ✅ **Timestamped File Naming**
 def get_timestamp():
     return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-# **Print the Banner**
+# ✅ **Print the Banner**
 def print_banner():
     fig = Figlet(font="slant")
     banner = fig.renderText("genMAP")
@@ -34,7 +34,7 @@ def print_banner():
     console.print("")
     console.print("[bold bright_magenta]---------------------------------------------------[/bold bright_magenta]")
 
-# **Colorization Function**
+# ✅ **Colorization Function**
 def colorize_output(output):
     patterns = {
         "open_ports": r"(\d+)/(tcp|udp)\s+open",
@@ -51,7 +51,7 @@ def colorize_output(output):
         output = re.sub(pattern, lambda x: f"[{color}]{x.group()}[/{color}]", output)
     return output
 
-# **Fixed `save_results()` to Accept 3 Arguments**
+# ✅ **Fixed `save_results()` to Accept 3 Arguments**
 def save_results(target, output, scan_type):
     timestamp = get_timestamp()
     filename = f"genMAP_{scan_type}_scan_{target}_{timestamp}.txt"
@@ -59,26 +59,41 @@ def save_results(target, output, scan_type):
         f.write(output)
     console.print(f"\n[bold cyan]Scan saved to: {filename}[/bold cyan]")
     
-    # Define `parse_results()` before using it
+    # ✅ Define `parse_results()` before using it
 def parse_results(output):
     open_ports = re.findall(r"(\d+)/(tcp|udp)\s+open", output)
     vulnerabilities = list(set(re.findall(r"CVE-\d{4}-\d+", output)))  # Remove duplicates
 
-    os_details = re.search(r"(OS details|Running): (.+)", output)
-    os_cpe = re.search(r"CPE: (cpe:/o:[a-z]+:[a-z_]+)", output)
-    os_details = os_details.group(2) if os_details else os_cpe.group(1) if os_cpe else "Unknown OS"
+    # ✅ Capture standard OS details
+    os_details_match = re.search(r"(OS details|Running): (.+)", output)
+    os_guess_match = re.search(r"Running \(JUST GUESSING\): (.+)", output)
+    os_cpe_match = re.search(r"CPE: (cpe:/o:[a-z]+:[a-z_]+)", output)
 
-    service_info = list(set(re.findall(r"(Service Info: .+|http-server-header: .+|http-title: .+)", output)))
-    active_directory = list(set(re.findall(r"(Active Directory|Domain Controller|Kerberos|SMB|LDAP|FQDN)", output)))
+    # ✅ Extract best available OS match
+    if os_details_match:
+        os_details = os_details_match.group(2)
+    elif os_guess_match:  # ✅ If normal OS detection fails, use "JUST GUESSING"
+        os_details = f"Guessed: {os_guess_match.group(1)}"
+    elif os_cpe_match:
+        os_details = os_cpe_match.group(1)
+    else:
+        os_details = "Unknown OS"
 
+    # ✅ Capture Service Info
+    service_info = list(set(re.findall(r"(Service Info: .+|http-server-header: .+|http-title: .+|OS CPE: .+)", output)))
+
+    # ✅ Capture Active Directory-related data
+    active_directory = list(set(re.findall(r"(Active Directory|Domain Controller|Kerberos|SMB|LDAP|FQDN|NTLM)", output)))
+
+    # ✅ Additional general information categories
     general_info = []
     indicators = {
         "File Exposure": [r"(index of /|directory listing|filetype|file)"],
-        "Credentials": [r"(password|username|credentials|hash|login)"],
-        "Sensitive Files": [r"(robots.txt|sitemap.xml|exposed|backup|config|db)"],
-        "Internal IPs": [r"(\d+\.\d+\.\d+\.\d+)"],
-        "Web Tech": [r"(PHP|WordPress|Drupal|Joomla|Apache)"],
-        "Miscellaneous": [r"(Public Key|Certificate|TLS|SSL|DNS)"]
+        "Credentials": [r"(password|username|credentials|hash|login|admin)"],  # Expanded keyword detection
+        "Sensitive Files": [r"(robots.txt|sitemap.xml|exposed|backup|config|db|.pem|.key)"],
+        "Internal IPs": [r"(\d+\.\d+\.\d+\.\d+)"],  # Captures IPs found in scan results
+        "Web Tech": [r"(PHP|WordPress|Drupal|Joomla|Apache|Tomcat|Node.js)"],
+        "Miscellaneous": [r"(Public Key|Certificate|TLS|SSL|DNS|Docker|Kubernetes)"]
     }
 
     for category, patterns in indicators.items():
@@ -87,9 +102,10 @@ def parse_results(output):
             if matches:
                 general_info.append(f"{category}: {', '.join(set(matches))}")
 
+    # ✅ Print structured output with clear colorization
     console.print("\n[bold cyan]Parsed Data:[/bold cyan]")
     console.print(f"[red]Open Ports:[/red] {', '.join([p[0] for p in open_ports]) if open_ports else 'None'}")
-    console.print(f"[green]OS Details:[/green] {os_details}")
+    console.print(f"[green]OS Details:[/green] {os_details}")  # ✅ Now includes "JUST GUESSING"
     console.print(f"[blue]Service Info:[/blue] {', '.join(service_info) if service_info else 'None'}")
     console.print(f"[purple]Active Directory:[/purple] {', '.join(active_directory) if active_directory else 'None'}")
     console.print(f"[yellow]Vulnerabilities:[/yellow] {', '.join(vulnerabilities) if vulnerabilities else 'None'}")
