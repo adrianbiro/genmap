@@ -12,13 +12,17 @@ from pyfiglet import Figlet
 console = Console()
 sudo_password = None
 
-# Function to print the banner
+# **Timestamped File Naming**
+def get_timestamp():
+    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+# **Print the Banner**
 def print_banner():
     fig = Figlet(font="slant")
     banner = fig.renderText("genMAP")
     console.print(f"[bold cyan]{banner}[/bold cyan]")
     console.print("[bold green]GenMAP: Automating Nmap Scans with Ease[/bold green]")
-    console.print("[yellow]Created by: K3strelSec | Version: 2.2.5[/yellow]")
+    console.print(f"[yellow]Created by: K3strelSec | Version: 2.2.13[/yellow]")
     console.print("[bold bright_red]---------------------------------------------------[/bold bright_red]")
     console.print("[bold cyan]Key:")
     console.print("[red]Red - Open Ports[/red]")
@@ -30,7 +34,7 @@ def print_banner():
     console.print("")
     console.print("[bold bright_magenta]---------------------------------------------------[/bold bright_magenta]")
 
-# ✅ **Colorization Function**
+# **Colorization Function**
 def colorize_output(output):
     patterns = {
         "open_ports": r"(\d+)/(tcp|udp)\s+open",
@@ -47,7 +51,15 @@ def colorize_output(output):
         output = re.sub(pattern, lambda x: f"[{color}]{x.group()}[/{color}]", output)
     return output
 
-# ✅ **Restored `parse_results` Function**
+# **Save Full Scan Output to a Timestamped Text File**
+def save_results(target, output):
+    timestamp = get_timestamp()
+    filename = f"genMAP_scan_{target}_{timestamp}.txt"
+    with open(filename, "w") as f:
+        f.write(output)
+    console.print(f"\n[bold cyan]Scan saved to: {filename}[/bold cyan]")
+
+# **Parse Results**
 def parse_results(output):
     open_ports = re.findall(r"(\d+)/(tcp|udp)\s+open", output)
     vulnerabilities = list(set(re.findall(r"CVE-\d{4}-\d+", output)))  # Remove duplicates
@@ -76,6 +88,7 @@ def parse_results(output):
             if matches:
                 general_info.append(f"{category}: {', '.join(set(matches))}")
 
+    # **Prints the Parsed Data**
     console.print("\n[bold cyan]Parsed Data:[/bold cyan]")
     console.print(f"[red]Open Ports:[/red] {', '.join([p[0] for p in open_ports]) if open_ports else 'None'}")
     console.print(f"[green]OS Details:[/green] {os_details}")
@@ -86,20 +99,55 @@ def parse_results(output):
 
     return open_ports, vulnerabilities, os_details, service_info, active_directory, general_info
 
-# ✅ **Restored `generate_exploitation_tips` Function**
+# **Fully Expanded `attack_methods`**
 def generate_exploitation_tips(open_ports, vulnerabilities, general_info):
     recommendations = []
 
-    # Exploit Suggestions for Common Services
     attack_methods = {
         21: "FTP detected. Try `ftp <ip>`, anonymous login, brute-force (`hydra`).",
         22: "SSH detected. Try key-based attacks, brute-force (`hydra`, `patator`).",
+        23: "Telnet detected. Try weak credentials, sniffing (`tcpdump`), MITM attacks.",
         25: "SMTP detected. Check for Open Relay (`Metasploit smtp_version`).",
         53: "DNS detected. Try zone transfer (`dig axfr @<ip>`), enumerate subdomains (`dnsenum`).",
+        67: "DHCP detected. Rogue DHCP possible (`dhcpstarv`).",
+        69: "TFTP detected. Check for open directory listing (`tftp <ip>`).",
         80: "HTTP detected. Run `gobuster`, check for SQL Injection, LFI, RCE (`sqlmap`).",
+        110: "POP3 detected. Try brute-force (`hydra`).",
+        111: "RPCBind detected. Try `rpcinfo -p <ip>`, `showmount -e <ip>`.",
+        119: "NNTP (Usenet) detected. Try authentication bypass (`telnet <ip> 119`).",
+        135: "MSRPC detected. Use `rpcdump.py` from Impacket.",
+        137: "NetBIOS detected. Try `nmblookup -A <ip>` to list NetBIOS names.",
+        139: "SMB detected. Check for anonymous login, null sessions (`enum4linux`, `smbclient`).",
+        143: "IMAP detected. Try brute-force (`hydra`), inspect emails.",
+        161: "SNMP detected. Try `snmpwalk -v1 -c public <ip>` for enumeration.",
+        389: "LDAP detected. Try anonymous bind (`ldapsearch -x -h <ip>`).",
         443: "HTTPS detected. Look for SSL vulnerabilities (`sslscan`, `testssl.sh`).",
+        445: "SMB detected. Test for EternalBlue (`Metasploit ms17_010`), password spray.",
+        512: "Rexec detected. Try `rsh <ip>`, check `.rhosts` files.",
+        513: "Rlogin detected. Try `.rhosts` trust abuse.",
+        514: "Rsh detected. Possible remote command execution.",
+        873: "RSYNC detected. Check for open directory (`rsync --list-only <ip>::`).",
+        902: "VMware detected. Check for guest-to-host escape exploits.",
+        1080: "SOCKS proxy detected. Possible open relay attack.",
+        1433: "MSSQL detected. Try default credentials (`sa` user), enumerate databases (`nmap --script ms-sql*`).",
+        1521: "Oracle DB detected. Try `odat.py` for database attacks.",
+        1723: "PPTP VPN detected. Check for MS-CHAPv2 vulnerabilities.",
+        2049: "NFS detected. Try `showmount -e <ip>` to list shares.",
+        2181: "Zookeeper detected. Try `echo srvr | nc <ip> 2181`.",
         3306: "MySQL detected. Try `mysql -u root -h <ip>`, check for weak credentials.",
-        3389: "RDP detected. Try brute-force (`xfreerdp`), exploit (`BlueKeep`)."
+        3389: "RDP detected. Try brute-force (`xfreerdp`), exploit (`BlueKeep`).",
+        3632: "DistCC detected. Try remote command execution (`nmap --script distcc-cve2004-2687`).",
+        5432: "PostgreSQL detected. Try `psql -h <ip> -U postgres`, check for weak passwords.",
+        5900: "VNC detected. Try password cracking (`hydra -P rockyou.txt -t 4 -s 5900 <ip> vnc`).",
+        6379: "Redis detected. Check for unauthenticated access (`redis-cli -h <ip> ping`).",
+        6667: "IRC detected. Check for open proxy (`nmap --script irc-unrealircd-backdoor`).",
+        7001: "WebLogic detected. Check for deserialization vulnerabilities.",
+        8000: "Common Web App detected. Run `gobuster`, check for admin panels.",
+        8080: "Common Proxy/Web App detected. Test for open proxy abuse.",
+        8443: "Alternative HTTPS detected. Look for misconfigurations.",
+        9000: "PHP-FPM detected. Possible remote code execution (`CVE-2019-11043`).",
+        9200: "Elasticsearch detected. Check for unauthenticated API access (`curl -X GET <ip>:9200/_cluster/health`).",
+        11211: "Memcached detected. Try amplification attacks (`memcrashed`).",
     }
 
     for port, protocol in open_ports:
@@ -115,48 +163,40 @@ def generate_exploitation_tips(open_ports, vulnerabilities, general_info):
         console.print(f"[bold yellow]- {rec}[/bold yellow]")
 
     return recommendations
-
-# ✅ **Function to Run the Nmap Scan**
+    
+# **Run the Nmap Scan**
 def run_scan(target):
     global sudo_password
     if not sudo_password:
         console.print("\n[bold yellow]Please enter your sudo password for this scan:[/bold yellow]")
         sudo_password = getpass.getpass("Sudo Password: ")
 
-    cmd = ["nmap", "-sS", "-sU", "-sC", "-sV", "-O", "-p-", "-T4", "--top-ports", "200",
-           "--script=vuln,vulners,http-enum,smb-enum-shares,rdp-enum-encryption", target]
+    cmd = ["nmap", "-sS", "-sU", "-sC", "-sV", "-O", "-p-", "-T4", "--top-ports", "200", target]
 
     console.print(f"\n[bold green]Running Optimized Nmap Scan (TCP + UDP): {' '.join(cmd)}[/bold green]")
 
-    full_cmd = ["sudo", "-S"] + cmd
+    process = subprocess.Popen(["sudo", "-S"] + cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
-    try:
-        process = subprocess.Popen(
-            full_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
-        )
+    process.stdin.write(sudo_password + "\n")
+    process.stdin.flush()
 
-        process.stdin.write(sudo_password + "\n")
-        process.stdin.flush()
+    output_lines = []
+    for line in iter(process.stdout.readline, ''):
+        output_lines.append(line)
+    
+    process.stdout.close()
+    process.wait()
 
-        output_lines = []
-        for line in iter(process.stdout.readline, ''):
-            if not line.startswith("Starting Nmap"):  
-                output_lines.append(line)
+    output = "".join(output_lines)
+    
+    console.print("\n[bold white]Raw Data (Full Output):[/bold white]")
+    console.print(colorize_output(output))
 
-        process.stdout.close()
-        process.wait()
+    save_results(target, output)
+    open_ports, vulnerabilities, os_details, service_info, active_directory, general_info = parse_results(output)
+    generate_exploitation_tips(open_ports, vulnerabilities, general_info)
 
-        output = "".join(output_lines)
-        console.print("\n[bold white]Raw Data:[/bold white]")
-        console.print(colorize_output(output))
-
-        open_ports, vulnerabilities, os_details, service_info, active_directory, general_info = parse_results(output)
-        generate_exploitation_tips(open_ports, vulnerabilities, general_info)
-
-    except Exception as e:
-        console.print(f"[bold red]Error running scan: {e}[/bold red]")
-
-# ✅ **Final Fix**
+# **Main Function**
 def main():
     print_banner()
     target = console.input("[bold yellow]Enter Target IP or domain: [/bold yellow]").strip()
