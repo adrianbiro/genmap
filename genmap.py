@@ -12,17 +12,17 @@ from pyfiglet import Figlet
 console = Console()
 sudo_password = None
 
-# ✅ **Timestamped File Naming**
+# **Timestamped File Naming**
 def get_timestamp():
     return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-# ✅ **Print the Banner**
+# **Print the Banner**
 def print_banner():
     fig = Figlet(font="slant")
     banner = fig.renderText("genMAP")
     console.print(f"[bold cyan]{banner}[/bold cyan]")
-    console.print("[bold green]GenMAP: Automating Nmap Scans with Ease[/bold green]")
-    console.print(f"[yellow]Created by: K3strelSec | Version: 2.3.1 (Secondary Vulnerability Scan Fixed!)[/yellow]")
+    console.print("[bold green]GenMAP: Advanced Network Reconnaissance for Pentesters[/bold green]")
+    console.print(f"[yellow]Created by: K3strelSec | Version: 3.0.0[/yellow]")
     console.print("[bold bright_red]---------------------------------------------------[/bold bright_red]")
     console.print("[bold cyan]Key:")
     console.print("[red]Red - Open Ports[/red]")
@@ -34,7 +34,7 @@ def print_banner():
     console.print("")
     console.print("[bold bright_magenta]---------------------------------------------------[/bold bright_magenta]")
 
-# ✅ **Colorization Function**
+# **Colorization Function**
 def colorize_output(output):
     patterns = {
         "open_ports": r"(\d+)/(tcp|udp)\s+open",
@@ -51,47 +51,215 @@ def colorize_output(output):
         output = re.sub(pattern, lambda x: f"[{color}]{x.group()}[/{color}]", output)
     return output
 
-# ✅ **Fixed `save_results()` to Accept 3 Arguments**
+# **Save Scan Results**
+import os
+
 def save_results(target, output, scan_type):
     timestamp = get_timestamp()
-    filename = f"genMAP_{scan_type}_scan_{target}_{timestamp}.txt"
+
+    # Create a `scans/` directory if it doesn’t exist
+    base_dir = "scans"
+    if not os.path.exists(base_dir):
+        os.makedirs(base_dir)
+
+    # Create a subdirectory for the target IP
+    target_dir = os.path.join(base_dir, target)
+    if not os.path.exists(target_dir):
+        os.makedirs(target_dir)
+
+    # Save scan results inside the IP-specific directory
+    filename = os.path.join(target_dir, f"genMAP_{scan_type}_scan_{target}_{timestamp}.txt")
     with open(filename, "w") as f:
         f.write(output)
+
     console.print(f"\n[bold cyan]Scan saved to: {filename}[/bold cyan]")
-    
-    # ✅ Define `parse_results()` before using it
+
+
+# **Scan Menu**
+def scan_menu():
+    console.print("\n[bold cyan]Select a scan mode:[/bold cyan]")
+    console.print("[1] Basic TCP Scan")
+    console.print("[2] Aggressive TCP Scan")
+    console.print("[3] Silent TCP Scan (Stealth)")
+    console.print("[4] UDP Scan")
+    console.print("[5] Vulnerability Scan")
+    console.print("[6] Full Enumeration (TCP + UDP + Vuln)")
+    console.print("[7] Custom Nmap Scan")
+    choice = console.input("\n[bold yellow]Enter your choice: [/bold yellow]").strip()
+    return choice
+
+# **Run TCP Scan**
+def run_tcp_scan(target, aggressive=False, stealth=False, full_enum=False):
+    global sudo_password
+    if not sudo_password:
+        console.print("\n[bold yellow]Please enter your sudo password for this scan:[/bold yellow]")
+        sudo_password = getpass.getpass("Sudo Password: ")
+
+    if aggressive:
+        cmd = ["nmap", "-A", "-T4", "-p-", target]
+    elif stealth:
+        cmd = ["nmap", "-sS", "-T2", "-Pn", "-p-", "-f", "--mtu", "16", "--scan-delay", "5s", "--randomize-hosts", target]
+    else:
+        cmd = ["nmap", "-sS", "-T4", "-p-", "-O", "-sV", "-sC", target]
+
+    execute_scan(target, cmd, "tcp", full_enum=full_enum)  # Pass `full_enum`
+
+# **Run UDP Scan**
+def run_udp_scan(target, full_enum=False):
+    cmd = ["nmap", "-sU", "--top-ports", "200", "-T4", target]
+    execute_scan(target, cmd, "udp", full_enum=full_enum)  # Pass `full_enum`
+
+
+# **Run Vulnerability Scan**
+def run_vuln_scan(target, full_enum=False):
+    cmd = ["nmap", "-sV", "--script=vuln,vulners,http-enum,smb-enum-shares,rdp-enum-encryption", target]
+    execute_scan(target, cmd, "vuln", full_enum=full_enum)  # Pass `full_enum`
+
+# **Run Custom Scan**
+def run_custom_scan(target, custom_args):
+    cmd = ["nmap"] + custom_args.split() + [target]
+    execute_scan(target, cmd, "custom")
+
+# **Execute Scan, Parse Results, and Provide Exploitation Tips**
+def execute_scan(target, cmd, scan_type, full_enum=False):
+    global sudo_password
+    if not sudo_password:
+        console.print("\n[bold yellow]Please enter your sudo password for this scan:[/bold yellow]")
+        sudo_password = getpass.getpass("Sudo Password: ")
+
+    console.print(f"\n[bold green]Running {scan_type.upper()} Scan: {' '.join(cmd)}[/bold green]")
+
+    process = subprocess.Popen(["sudo", "-S"] + cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    process.stdin.write(sudo_password + "\n")
+    process.stdin.flush()
+
+    output_lines = []
+    for line in iter(process.stdout.readline, ''):
+        output_lines.append(line)
+
+    process.stdout.close()
+    process.wait()
+    output = "".join(output_lines)
+
+    console.print(f"\n[bold blue]Raw Data ({scan_type.upper()} Scan Output):[/bold blue]")
+    console.print(colorize_output(output))
+
+    save_results(target, output, scan_type)
+
+    # Ensure parsed results are displayed every time
+    parsed_data = parse_results(output)
+
+    (
+        open_ports, vulnerabilities, os_details, device_type, service_info,
+        active_directory, general_info, smb_info, ssl_info, firewall_info, traceroute_info
+    ) = parsed_data
+
+    console.print("\n[bold cyan]Parsed Results:[/bold cyan]")
+    console.print(f"[red]Open Ports:[/red] {', '.join([f'{p[0]}/{p[1]} ({p[2]})' for p in open_ports]) if open_ports else 'None'}")
+    console.print(f"[green]OS Details:[/green] {os_details}")
+    console.print(f"[blue]Service Info:[/blue] {', '.join(service_info) if service_info else 'None'}")
+    console.print(f"[purple]Active Directory:[/purple] {', '.join(active_directory) if active_directory else 'None'}")
+    console.print(f"[yellow]Vulnerabilities:[/yellow] {', '.join(vulnerabilities) if vulnerabilities else 'None'}")
+    console.print(f"[white]General Info:[/white] {', '.join(general_info) if general_info else 'None'}")
+
+    if smb_info:
+        console.print("\n[bold magenta]SMB Security Information:[/bold magenta]")
+        for key, value in smb_info.items():
+            console.print(f"[magenta]{key}:[/magenta] {value}")
+
+    if ssl_info:
+        console.print("\n[bold cyan]SSL/TLS Information:[/bold cyan]")
+        for key, value in ssl_info.items():
+            console.print(f"[cyan]{key}:[/cyan] {value}")
+
+    if firewall_info:
+        console.print("\n[bold red]Firewall Detection:[/bold red]")
+        for info in firewall_info:
+            console.print(f"[red]{info}[/red]")
+
+    if traceroute_info:
+        console.print("\n[bold yellow]Traceroute Information:[/bold yellow]")
+        for hop in traceroute_info:
+            console.print(f"[yellow]{hop}[/yellow]")
+
+    generate_exploitation_tips(open_ports, vulnerabilities, general_info)
+
+    # If running Full Enumeration, continue with the next scan automatically
+    if full_enum and scan_type == "tcp":
+        console.print("\n[bold cyan]TCP Scan Complete. Starting UDP Scan...[/bold cyan]")
+        run_udp_scan(target, full_enum=True)
+    elif full_enum and scan_type == "udp":
+        console.print("\n[bold cyan]UDP Scan Complete. Starting Vulnerability Scan...[/bold cyan]")
+        run_vuln_scan(target, full_enum=True)
+    elif full_enum and scan_type == "vuln":
+        console.print("\n[bold cyan]Full Enumeration Completed![/bold cyan]")
+
+    # Only prompt if NOT in Full Enumeration mode
+    if not full_enum:
+        next_step = console.input("\n[bold cyan]Do you want to continue with another scan? (y/n): [/bold cyan]").strip().lower()
+        if next_step == "y":
+            new_choice = scan_menu()
+            handle_scan_choice(new_choice, target)
+
+
+# **Handle Scan Choice**
+def handle_scan_choice(choice, target, full_enum=False):
+    global sudo_password
+    if not sudo_password:
+        console.print("\n[bold yellow]Please enter your sudo password for this scan:[/bold yellow]")
+        sudo_password = getpass.getpass("Sudo Password: ")
+
+    if choice == "1":
+        run_tcp_scan(target)
+    elif choice == "2":
+        run_tcp_scan(target, aggressive=True)
+    elif choice == "3":
+        run_tcp_scan(target, stealth=True)
+    elif choice == "4":
+        run_udp_scan(target)
+    elif choice == "5":
+        run_vuln_scan(target)
+    elif choice == "6":  # Fix Full Enumeration
+        console.print("\n[bold cyan]Running Full Enumeration: TCP + UDP + Vulnerability Scan[/bold cyan]")
+        run_tcp_scan(target, full_enum=True)  # Pass `full_enum=True` to skip prompts
+    elif choice == "7":
+        custom_cmd = console.input("[bold yellow]Enter your custom Nmap command (without 'nmap'): [/bold yellow]").strip()
+        run_custom_scan(target, custom_cmd)
+    else:
+        console.print("[bold red]Invalid choice. Please try again.[/bold red]")
+
+# **Parse Results**
 def parse_results(output):
-    open_ports = re.findall(r"(\d+)/(tcp|udp)\s+open", output)
+    open_ports = re.findall(r"(\d+)/(tcp|udp)\s+open\s+(\S+)", output)
     vulnerabilities = list(set(re.findall(r"CVE-\d{4}-\d+", output)))  # Remove duplicates
 
-    # ✅ Capture standard OS details
+    # Capture OS details
     os_details_match = re.search(r"(OS details|Running): (.+)", output)
     os_guess_match = re.search(r"Running \(JUST GUESSING\): (.+)", output)
     os_cpe_match = re.search(r"CPE: (cpe:/o:[a-z]+:[a-z_]+)", output)
 
-    # ✅ Extract best available OS match
     if os_details_match:
         os_details = os_details_match.group(2)
-    elif os_guess_match:  # ✅ If normal OS detection fails, use "JUST GUESSING"
+    elif os_guess_match:
         os_details = f"Guessed: {os_guess_match.group(1)}"
     elif os_cpe_match:
         os_details = os_cpe_match.group(1)
     else:
         os_details = "Unknown OS"
 
-    # ✅ Capture Service Info
+    # Capture Service Info
     service_info = list(set(re.findall(r"(Service Info: .+|http-server-header: .+|http-title: .+|OS CPE: .+)", output)))
 
-    # ✅ Capture Active Directory-related data
+    # Capture Active Directory-related data
     active_directory = list(set(re.findall(r"(Active Directory|Domain Controller|Kerberos|SMB|LDAP|FQDN|NTLM)", output)))
 
-    # ✅ Additional general information categories
+    # Additional general information categories
     general_info = []
     indicators = {
         "File Exposure": [r"(index of /|directory listing|filetype|file)"],
-        "Credentials": [r"(password|username|credentials|hash|login|admin)"],  # Expanded keyword detection
+        "Credentials": [r"(password|username|credentials|hash|login|admin)"],
         "Sensitive Files": [r"(robots.txt|sitemap.xml|exposed|backup|config|db|.pem|.key)"],
-        "Internal IPs": [r"(\d+\.\d+\.\d+\.\d+)"],  # Captures IPs found in scan results
+        "Internal IPs": [r"(\d+\.\d+\.\d+\.\d+)"],
         "Web Tech": [r"(PHP|WordPress|Drupal|Joomla|Apache|Tomcat|Node.js)"],
         "Miscellaneous": [r"(Public Key|Certificate|TLS|SSL|DNS|Docker|Kubernetes)"]
     }
@@ -102,16 +270,36 @@ def parse_results(output):
             if matches:
                 general_info.append(f"{category}: {', '.join(set(matches))}")
 
-    # ✅ Print structured output with clear colorization
-    console.print("\n[bold cyan]Parsed Data:[/bold cyan]")
-    console.print(f"[red]Open Ports:[/red] {', '.join([p[0] for p in open_ports]) if open_ports else 'None'}")
-    console.print(f"[green]OS Details:[/green] {os_details}")  # ✅ Now includes "JUST GUESSING"
-    console.print(f"[blue]Service Info:[/blue] {', '.join(service_info) if service_info else 'None'}")
-    console.print(f"[purple]Active Directory:[/purple] {', '.join(active_directory) if active_directory else 'None'}")
-    console.print(f"[yellow]Vulnerabilities:[/yellow] {', '.join(vulnerabilities) if vulnerabilities else 'None'}")
-    console.print(f"[white]General:[/white] {', '.join(general_info) if general_info else 'None'}")
+    # **Extract SMB Security Information**
+    smb_info = {}
+    smb_match = re.findall(r"(smb2-security-mode|smb2-time):\s*(.*)", output, re.IGNORECASE)
+    for key, value in smb_match:
+        smb_info[key] = value
 
-    return open_ports, vulnerabilities, os_details, service_info, active_directory, general_info
+    # **Extract SSL/TLS Information**
+    ssl_info = {}
+    ssl_match = re.findall(r"(TLSv1\.\d|SSLv\d) enabled", output)
+    if ssl_match:
+        ssl_info["Enabled Protocols"] = ", ".join(ssl_match)
+
+    # **Extract Firewall Detection**
+    firewall_info = []
+    firewall_patterns = [
+        r"Nmap done: 0 IP addresses",
+        r"(Host seems down|filtered)",
+        r"Blocked by firewall"
+    ]
+    for pattern in firewall_patterns:
+        if re.search(pattern, output, re.IGNORECASE):
+            firewall_info.append(pattern)
+
+    # **Extract Traceroute Info**
+    traceroute_info = re.findall(r"(\d+\.\d+\.\d+\.\d+)\s+\d+.\d+ ms", output)
+
+    return (
+        open_ports, vulnerabilities, os_details, "Unknown Device", service_info,
+        active_directory, general_info, smb_info, ssl_info, firewall_info, traceroute_info
+    )
 
 # **Fully Expanded attack_methods**
 def generate_exploitation_tips(open_ports, vulnerabilities, general_info):
@@ -172,9 +360,9 @@ def generate_exploitation_tips(open_ports, vulnerabilities, general_info):
         50000: "SAP Management Console detected. Check for vulnerabilities (`nmap --script sap* -p 50000 <ip>`).",
     }
 
-    # Check if open ports have known exploits
-    for port, protocol in open_ports:
-        port = int(port)
+    # Fix: Unpack only the first two values and ignore the service name
+    for port_tuple in open_ports:
+        port = int(port_tuple[0])  # Extract only the port number
         if port in attack_methods:
             recommendations.append(attack_methods[port])
 
@@ -182,108 +370,24 @@ def generate_exploitation_tips(open_ports, vulnerabilities, general_info):
     for vuln in vulnerabilities:
         recommendations.append(f"Possible exploit available for `{vuln}`. Check ExploitDB: https://www.exploit-db.com/search?cve={vuln}")
 
-    # **Print Exploitation Recommendations**
+    # Print Exploitation Recommendations
     console.print("\n[bold cyan]Exploitation Recommendations:[/bold cyan]")
     for rec in recommendations:
         console.print(f"[bold yellow]- {rec}[/bold yellow]")
 
     return recommendations
-
-# **Run the First TCP Scan**
-def run_tcp_scan(target):
-    global sudo_password
-    if not sudo_password:
-        console.print("\n[bold yellow]Please enter your sudo password for this scan:[/bold yellow]")
-        sudo_password = getpass.getpass("Sudo Password: ")
-
-    cmd = ["nmap", "-sS", "-p-", "-T4", "-O", "-sV", "-sC", target]  # TCP SYN scan first
-    console.print(f"\n[bold green]Running TCP Scan: {' '.join(cmd)}[/bold green]")
-
-    process = subprocess.Popen(["sudo", "-S"] + cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    process.stdin.write(sudo_password + "\n")
-    process.stdin.flush()
-
-    output_lines = []
-    for line in iter(process.stdout.readline, ''):
-        output_lines.append(line)
-
-    process.stdout.close()
-    process.wait()
-    output = "".join(output_lines)
-
-    console.print("\n[bold blue]Raw Data (TCP Scan Output):[/bold blue]")
-    console.print(colorize_output(output))
-
-    save_results(target, output, "tcp")
-    open_ports, vulnerabilities, os_details, service_info, active_directory, general_info = parse_results(output)
-
-    # Extract TCP ports found
-    discovered_ports = ",".join([p[0] for p in open_ports])
-    console.print(f"[bold cyan]Detected TCP Ports: {discovered_ports}[/bold cyan]")
-
-    # **Proceed to UDP Scan**
-    run_udp_scan(target, discovered_ports)
-
-# **Run the Second UDP Scan**
-def run_udp_scan(target, discovered_ports):
-    console.print("\n[bold yellow]Running UDP Scan...[/bold yellow]")
-
-    cmd = ["nmap", "-sU", "--top-ports", "200", "-T4", target]  # Scan only top 100 UDP ports
-    console.print(f"\n[bold green]Running UDP Scan: {' '.join(cmd)}[/bold green]")
-
-    process = subprocess.Popen(["sudo", "-S"] + cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    process.stdin.write(sudo_password + "\n")
-    process.stdin.flush()
-
-    output_lines = []
-    for line in iter(process.stdout.readline, ''):
-        output_lines.append(line)
-
-    process.stdout.close()
-    process.wait()
-    output = "".join(output_lines)
-
-    console.print("\n[bold blue]Raw Data (UDP Scan Output):[/bold blue]")
-    console.print(colorize_output(output))
-
-    save_results(target, output, "udp")
-    open_ports, vulnerabilities, os_details, service_info, active_directory, general_info = parse_results(output)
-
-    # **Proceed to Vulnerability Scan**
-    run_vuln_scan(target, discovered_ports)
-
-# **Run the Final Vulnerability Scan**
-def run_vuln_scan(target, discovered_ports):
-    console.print("\n[bold yellow]Running Final Vulnerability Scan...[/bold yellow]")
-
-    cmd = ["nmap", "-sV", "--script=vuln,vulners,http-enum,smb-enum-shares,rdp-enum-encryption", "-p", discovered_ports, target]
-    console.print(f"\n[bold green]Running Vulnerability Scan: {' '.join(cmd)}[/bold green]")
-
-    process = subprocess.Popen(["sudo", "-S"] + cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    process.stdin.write(sudo_password + "\n")
-    process.stdin.flush()
-
-    output_lines = []
-    for line in iter(process.stdout.readline, ''):
-        output_lines.append(line)
-
-    process.stdout.close()
-    process.wait()
-    output = "".join(output_lines)
-
-    console.print("\n[bold blue]Raw Data (Vulnerability Scan Output):[/bold blue]")
-    console.print(colorize_output(output))
-
-    save_results(target, output, "vuln")
-    open_ports, vulnerabilities, os_details, service_info, active_directory, general_info = parse_results(output)
-    generate_exploitation_tips(open_ports, vulnerabilities, general_info)
-
-# **Main Function (Starts TCP First)**
+    
+# **Main Function**
 def main():
     print_banner()
     target = console.input("[bold yellow]Enter Target IP or domain: [/bold yellow]").strip()
-    run_tcp_scan(target)
+
+    if not target:
+        console.print("[bold red]Error: No target entered![/bold red]")
+        return
+
+    choice = scan_menu()
+    handle_scan_choice(choice, target)
 
 if __name__ == "__main__":
     main()
-
