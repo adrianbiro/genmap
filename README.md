@@ -12,7 +12,7 @@ A tool to automate Nmap scanning with customizable modes for CTF and Pentest. Ge
     git clone https://github.com/braijan/genmap.git
     ```
 
-2. Navigate to the project directory:
+2. Navigate to the project directory and install dependencies:
 
     ```bash
     cd genmap
